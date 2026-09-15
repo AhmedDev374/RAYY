@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  رَيّ — RAYY
+  Single horizontal wordmark. Exact brand text: [water-drop] رَيّ — RAYY
+  Layout (left to right): vector water-drop PATH, then Arabic رَيّ, then — RAYY.
+  Transparent background. No emoji glyphs, no emoji fonts, no separate emoji text node.
+  The water drop is a real SVG <path> (blue/cyan gradient + subtle highlight).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="300" viewBox="0 0 1240 300"
+     role="img" aria-label="رَيّ — RAYY" preserveAspectRatio="xMidYMid meet">
+ <title>رَيّ — RAYY</title>
+
+ <defs>
+    <linearGradient id="dropBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#67E8F9"/>
+      <stop offset="45%"  stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <radialGradient id="dropGloss" cx="38%" cy="28%" r="46%">
+      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="55%"  stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+ </defs>
+
+  <!-- Water-drop vector (on the LEFT), vertically centered on the text baseline -->
+ <g transform="translate(120,150)">
+    <path d="M0,-78
+             C 28,-42 58,-8 58,28
+             C 58,64 33,92 0,92
+             C -33,92 -58,64 -58,28
+             C -58,-8 -28,-42 0,-78 Z"
+          fill="url(#dropBody)"/>
+    <ellipse cx="-15" cy="-18" rx="21" ry="30"
+             fill="url(#dropGloss)" transform="rotate(-18 -15 -18)"/>
+ </g>
+
+  <!-- Arabic: رَيّ  (logical order ر + fatha, ي + shadda). Explicit RTL, isolated run. -->
+ <text x="232" y="186"
+        font-family="'Cairo','Noto Naskh Arabic','Segoe UI','Tahoma',sans-serif"
+        font-size="132" font-weight="700" fill="#FFFFFF"
+        direction="rtl" unicode-bidi="isolate"
+        text-rendering="geometricPrecision">&#x0631;&#x064E;&#x064A;&#x0651;</text>
+
+  <!-- Em dash (U+2014), same baseline -->
+ <text x="482" y="182"
+        font-family="'Inter','Segoe UI',Arial,sans-serif"
+        font-size="120" font-weight="600" fill="#FFFFFF" fill-opacity="0.9">&#x2014;</text>
+
+  <!-- Latin RAYY (uppercase, bold sans-serif, wide tracking), same baseline -->
+ <text x="620" y="186"
+        font-family="'Inter','Helvetica Neue',Arial,sans-serif"
+        font-size="132" font-weight="800" fill="#FFFFFF"
+        letter-spacing="6" text-rendering="geometricPrecision">RAYY</text>
+</svg>

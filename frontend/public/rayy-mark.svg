@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RAYY compact mark: vector water-drop + "RAYY" (Latin only).
+  Horizontal single line. Transparent background.
+  No Arabic text, no em dash, no emoji glyphs.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="300" viewBox="0 0 620 300"
+     role="img" aria-label="RAYY" preserveAspectRatio="xMidYMid meet">
+ <title>RAYY</title>
+
+ <defs>
+    <linearGradient id="rayyMarkDrop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#67E8F9"/>
+      <stop offset="45%"  stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <radialGradient id="rayyMarkGloss" cx="38%" cy="28%" r="46%">
+      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="55%"  stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+ </defs>
+
+  <!-- Water-drop vector (LEFT) -->
+ <g transform="translate(120,150)">
+    <path d="M0,-78
+             C 28,-42 58,-8 58,28
+             C 58,64 33,92 0,92
+             C -33,92 -58,64 -58,28
+             C -58,-8 -28,-42 0,-78 Z"
+          fill="url(#rayyMarkDrop)"/>
+    <ellipse cx="-15" cy="-18" rx="21" ry="30"
+             fill="url(#rayyMarkGloss)" transform="rotate(-18 -15 -18)"/>
+ </g>
+
+  <!-- Latin RAYY (uppercase), same baseline as the drop center -->
+ <text x="232" y="186"
+        font-family="'Inter','Helvetica Neue',Arial,sans-serif"
+        font-size="132" font-weight="800" fill="#FFFFFF"
+        letter-spacing="6" text-rendering="geometricPrecision">RAYY</text>
+</svg>
