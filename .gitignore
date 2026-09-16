@@ -1,4 +1,3 @@
-@"
 node_modules/
 frontend/node_modules/
 __pycache__/
@@ -9,4 +8,8 @@ __pycache__/
 !.env.example
 dist/
 frontend/dist/
-"@ | Set-Content .gitignore
+
+# Throw-away databases written by the verification scripts
+backend/data/_control_verify.db
+backend/data/_ui_controls.db
+backend/data/_e2e_copy.db

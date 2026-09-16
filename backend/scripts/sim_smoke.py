@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Device, Plant, Reading  # noqa: E402
-from app.services.simulation_service import SIM_DEVICE_NAME  # noqa: E402
+from app.services.simulation_service import SIM_DEVICE_NAME, SIM_NICKNAME  # noqa: E402
 
 
 def _db_counts():
@@ -21,7 +21,7 @@ def _db_counts():
     try:
         return (
             db.query(Reading).count(),
-            db.query(Plant).filter(Plant.nickname == "Tomato Demo").count(),
+            db.query(Plant).filter(Plant.nickname == SIM_NICKNAME).count(),
             db.query(Device).filter(Device.name == SIM_DEVICE_NAME).count(),
         )
     finally:

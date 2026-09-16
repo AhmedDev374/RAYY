@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -11,9 +11,18 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useControlSnapshot } from '../hooks/useControl';
 import { usePlantWebSocket } from '../hooks/useWebSocket';
 import { api } from '../lib/api';
+import { DEVICE_SOURCE_AR, type ControlSnapshot } from '../lib/control';
+import type { SpeciesProfile } from '../lib/encyclopedia';
+
+type ControlSnapshotTank = ControlSnapshot['tank'];
 import { getSimulationStatus, startSimulation, type SimulationState } from '../lib/simulation';
+import ControlCenter from '../components/control/ControlCenter';
+import { ControlLogCard } from '../components/control/Panels';
+import { SEVERITY_STYLES, StatusPill, ControlCard } from '../components/control/ui';
+import { CollapsibleToolbar } from '../components/collapsible/CollapsibleSection';
 
 interface Plant {
   id: number;
@@ -134,10 +143,11 @@ const statusDotColors = {
 
 export default function DashboardPage() {
   const [plantId, setPlantId] = useState<number | null>(null);
+  const [logFilter, setLogFilter] = useState('all');
   const queryClient = useQueryClient();
 
-  // There is no Simulation Mode toggle: selecting "Tomato Demo" in the normal
-  // plant selector is what turns the simulator on (see the effect below).
+  // There is no Simulation Mode toggle: selecting the simulated plant in the
+  // normal plant selector is what turns the simulator on (see the effect below).
   const { data: simulation } = useQuery({
     queryKey: ['simulation-status'],
     queryFn: getSimulationStatus,
@@ -150,7 +160,7 @@ export default function DashboardPage() {
     mutationFn: startSimulation,
     onSuccess: (state: SimulationState) => {
       queryClient.setQueryData(['simulation-status'], state);
-      // Starting the simulation provisions a "Tomato Demo" plant row, so the
+      // Starting the simulation provisions the simulated plant row, so the
       // plant list must be refreshed for it to appear in the selector.
       queryClient.invalidateQueries({ queryKey: ['plants'] });
     },
@@ -166,11 +176,26 @@ export default function DashboardPage() {
     retry: false,
   });
 
+  // The Encyclopedia is the single source of truth for the Arabic plant names.
+  // Sharing the ['encyclopedia'] query key with the other pages means one cached
+  // request, not a second catalog fetch.
+  const { data: catalog = [] } = useQuery({
+    queryKey: ['encyclopedia'],
+    queryFn: () => api<SpeciesProfile[]>('/api/v1/encyclopedia'),
+    staleTime: Infinity,
+  });
+
+  // Show the plant type in Arabic in the selector (e.g. "مزرعة الطماطم (الطماطم)").
+  // Falls back to the stored species key until the catalog loads; nothing is
+  // hardcoded, so every supported plant is translated dynamically.
+  const speciesNameAr = (speciesKey: string) =>
+    catalog.find((s) => s.species === speciesKey)?.name_ar ?? speciesKey;
+
   const hasPlants = plants.length > 0;
   const selectedId = plantId ?? plants[0]?.id ?? null;
   const selectedPlant = plants.find((p) => p.id === selectedId);
 
-  // If the user has no plants at all, seed the Tomato Demo plant so the
+  // If the user has no plants at all, seed the simulated plant so the
   // dashboard is never empty — selecting it auto-starts the simulator.
   useEffect(() => {
     if (plantsLoading || plantsError) return;
@@ -182,9 +207,9 @@ export default function DashboardPage() {
   // Selecting the simulated plant in the normal selector starts the existing
   // tomato simulator. `start` is idempotent server-side, so re-selecting it --
   // or React re-running this effect -- can never spawn a second simulator, a
-  // second "Tomato Demo" plant or a second RAYY-SIM-TOMATO-001 device.
+  // second simulated plant or a second RAYY-SIM-TOMATO-001 device.
   // Switching to any other plant simply stops *displaying* simulated data; the
-  // engine keeps running and Tomato Demo's history is never deleted.
+  // engine keeps running and the simulated plant's history is never deleted.
   const isSimPlantSelected = !!selectedId && selectedId === simulation?.plant_id;
   useEffect(() => {
     if (!selectedPlant) return;
@@ -205,21 +230,67 @@ export default function DashboardPage() {
 
   const { reading: liveReading, connected } = usePlantWebSocket(hasPlants ? selectedId : null);
 
-  // Guard against ever rendering another plant's data: the WebSocket resets its
-  // reading on plant change (see usePlantWebSocket), and this belt-and-braces
-  // check drops any live reading that does not belong to the selected plant.
+  // Control state shares the ['control-status', plantId] React Query entry with
+  // the Smart Control Center below, so this is a cache read -- not a second
+  // poll. It feeds the general status strip, the control log and -- because it
+  // carries the plant's latest reading -- the metric cards and charts too. It
+  // polls at the same cadence as the readings query while the simulated plant
+  // is selected, so the two can never drift apart on screen.
+  const { data: controlSnapshot } = useControlSnapshot(
+    selectedId,
+    isSimPlantSelected ? 3000 : 5000,
+  );
+
+  // Single source of truth for the live readings.
+  //
+  // The control snapshot is built server-side from the plant's latest reading
+  // and is the exact same reading the Smart Control Center's sensor strip and
+  // the water tank are derived from. Preferring it here means the metric cards,
+  // the charts and every control card are all fed by ONE reading, instead of
+  // one component showing the WebSocket value and another the polled value and
+  // the two disagreeing. The WebSocket reading is still used when it is the
+  // freshest one the browser has, and the polled `readings` list is the last
+  // fallback -- but all three paths converge on the same numbers.
+  const snapshotReading = controlSnapshot?.reading ?? null;
   const liveForSelected =
     liveReading && (liveReading.plant_id === selectedId || liveReading.plant_id == null)
       ? liveReading
       : null;
-  const latest = liveForSelected || apiReadings[0] || null;
-  const chartData = [...apiReadings].reverse().map((r) => ({
-    time: new Date(r.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    temp: +r.temperature.toFixed(1),
-    humidity: +r.humidity.toFixed(1),
-    soil: +r.soil_moisture.toFixed(0),
-    light: +r.light.toFixed(0),
-  }));
+  const controlReading: Reading | null = snapshotReading
+    ? {
+        id: apiReadings[0]?.id ?? 0,
+        ts: snapshotReading.ts,
+        temperature: snapshotReading.temperature,
+        humidity: snapshotReading.humidity,
+        light: snapshotReading.light,
+        soil_moisture: snapshotReading.soil_moisture,
+        ph: snapshotReading.ph,
+      }
+    : null;
+  // Prefer the snapshot reading so the metric cards show exactly what the
+  // control center / sensor strip show; fall back to the socket then the poll.
+  const latest = controlReading || liveForSelected || apiReadings[0] || null;
+  // Charts are built from the same polled history; the newest point is replaced
+  // by `latest` so the line's last value and the metric card above it are the
+  // same number (the polled list lags the snapshot by up to one poll interval).
+  const chartData = [...apiReadings]
+    .reverse()
+    .map((r) => ({
+      time: new Date(r.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      temp: +r.temperature.toFixed(1),
+      humidity: +r.humidity.toFixed(1),
+      soil: +r.soil_moisture.toFixed(0),
+      light: +r.light.toFixed(0),
+    }));
+  if (latest && chartData.length > 0) {
+    chartData[chartData.length - 1] = {
+      time: new Date(latest.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      temp: +latest.temperature.toFixed(1),
+      humidity: +latest.humidity.toFixed(1),
+      soil: +latest.soil_moisture.toFixed(0),
+      light: +latest.light.toFixed(0),
+    };
+  }
 
   const soil = latest
     ? soilStatus(latest.soil_moisture, 'soil_status' in latest ? latest.soil_status : undefined)
@@ -234,12 +305,19 @@ export default function DashboardPage() {
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="text-right">
-          <h1 className="text-2xl font-bold text-gray-900">لوحة تحكم الري الذكي</h1>
+          <h1 className="text-2xl font-bold text-gray-900">لوحة تحكم الصوبة الذكية</h1>
+          <p className="text-sm text-gray-500 mt-0.5">مراقبة وتحكم ذكي في بيئة النبات</p>
           {lastUpdated && (
-            <p className="text-sm text-gray-500 mt-0.5">آخر تحديث: {lastUpdated}</p>
+            <p className="text-xs text-gray-400 mt-0.5">آخر تحديث: {lastUpdated}</p>
           )}
         </div>
-        {hasPlants && (
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {/* GLOBAL section controls: these two buttons act on EVERY collapsible
+              dashboard section at once. They are intentionally kept apart from
+              the single arrow each section header carries. */}
+          <CollapsibleToolbar />
+
+          {hasPlants && (
           <div className="flex items-center gap-3">
             <select
               className="bg-white border border-gray-200 rounded-lg px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
@@ -248,7 +326,7 @@ export default function DashboardPage() {
             >
               {plants.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.nickname} ({p.species})
+                  {p.nickname} ({speciesNameAr(p.species)})
                 </option>
               ))}
             </select>
@@ -267,8 +345,62 @@ export default function DashboardPage() {
               {connected ? 'مباشر' : 'استعلام دوري'}
             </span>
           </div>
-        )}
+          )}
+        </div>
       </div>
+
+      {/* حالة النظام العامة: RAYY يراقب ويتحكم --------------------------- */}
+      {!plantsLoading && !plantsError && hasPlants && controlSnapshot && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <StatusPill
+                label={controlSnapshot.overall_status.label}
+                severity={
+                  controlSnapshot.overall_status.key === 'ok'
+                    ? 'ok'
+                    : controlSnapshot.overall_status.key === 'warning'
+                      ? 'warning'
+                      : controlSnapshot.overall_status.key === 'critical'
+                        ? 'critical'
+                        : controlSnapshot.overall_status.key === 'stopped'
+                          ? 'critical'
+                          : 'info'
+                }
+                pulse={controlSnapshot.overall_status.key === 'ok'}
+              />
+              <span className="text-xs font-medium text-gray-600">
+                وضع التشغيل: <span className="font-bold text-gray-800">{controlSnapshot.mode_label}</span>
+              </span>
+              {controlSnapshot.emergency_stop && <StatusPill label="إيقاف طارئ" severity="critical" />}
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="text-xs text-gray-500">
+                مصدر البيانات:{' '}
+                <span className="font-semibold text-gray-700">
+                  {DEVICE_SOURCE_AR[controlSnapshot.device_link.source] ??
+                    controlSnapshot.device_link.source}
+                </span>
+              </span>
+              <span className="text-xs text-gray-500">
+                الحساسات:{' '}
+                <span
+                  className={`font-semibold ${
+                    controlSnapshot.sensors.available ? 'text-green-700' : 'text-amber-700'
+                  }`}
+                >
+                  {controlSnapshot.sensors.label}
+                </span>
+              </span>
+            </div>
+          </div>
+          <p className={`text-xs leading-5 mt-2.5 ${SEVERITY_STYLES[
+            controlSnapshot.overall_status.key === 'ok' ? 'ok' : 'warning'
+          ].text}`}>
+            {controlSnapshot.overall_status.detail}
+          </p>
+        </div>
+      )}
 
       {plantsLoading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -369,13 +501,24 @@ export default function DashboardPage() {
             />
           </div>
 
+          {/* مركز التحكم الذكي — مراقبة وتحكم في نفس الصفحة */}
+          <ControlCenter plantId={selectedId as number} />
+
           {/* Main content grid */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* Charts - 3 columns */}
             <div className="lg:col-span-3 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Temperature & Humidity chart */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                {/* Temperature & Humidity chart card.
+                    Deliberately NOT a collapsible section: `collapsible={false}`
+                    keeps its body always rendered, so the chart and its live
+                    data stay visible. It is not registered in the expand/collapse
+                    state and the global "توسيع الكل" / "طي الكل" controls never
+                    touch it.
+                    The card header labels were removed on purpose: no title and
+                    no subtitle render, but the card container, the chart and all
+                    of its data/updates stay exactly as they were. */}
+                <ControlCard collapsible={false}>
                   <h3 className="text-sm font-semibold text-gray-700 mb-4">درجة الحرارة والرطوبة</h3>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
@@ -392,7 +535,7 @@ export default function DashboardPage() {
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
-                </div>
+                </ControlCard>
 
                 {/* Soil Moisture & Light chart */}
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -446,6 +589,15 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </div>
+
+              {/* سجل التحكم */}
+              {controlSnapshot && (
+                <ControlLogCard
+                  events={controlSnapshot.history}
+                  systemFilter={logFilter}
+                  onFilterChange={setLogFilter}
+                />
+              )}
             </div>
 
             {/* Sidebar - 1 column */}
@@ -489,6 +641,10 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
+
+              {/* Water Tank — the SAME simulated tank the control center and the
+                  demo read, so the dashboard never disagrees with them. */}
+              {controlSnapshot && <TankCard tank={controlSnapshot.tank} />}
 
               {/* Quick actions */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -565,6 +721,70 @@ function MetricCard({
         </span>
       )}
     </div>
+  );
+}
+
+function TankCard({ tank }: { tank: ControlSnapshotTank }) {
+  const severity =
+    tank.status === 'critical'
+      ? 'critical'
+      : tank.status === 'low'
+        ? 'warning'
+        : tank.status === 'ok'
+          ? 'ok'
+          : 'info';
+  const pct = tank.known && tank.level_pct !== null ? tank.level_pct : null;
+  const barColor =
+    severity === 'critical'
+      ? 'bg-red-500'
+      : severity === 'warning'
+        ? 'bg-amber-500'
+        : severity === 'ok'
+          ? 'bg-sky-500'
+          : 'bg-gray-300';
+
+  return (
+    <ControlCard
+      section="waterTank"
+      title="خزان المياه"
+      subtitle="مستوى الخزان المستخدم في حماية المضخة"
+    >
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs text-gray-500">المستوى الحالي</span>
+        <span
+          className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
+            severity === 'critical'
+              ? 'bg-red-100 text-red-700'
+              : severity === 'warning'
+                ? 'bg-amber-100 text-amber-700'
+                : severity === 'ok'
+                  ? 'bg-sky-100 text-sky-700'
+                  : 'bg-gray-100 text-gray-600'
+          }`}
+        >
+          {tank.status_label}
+        </span>
+      </div>
+      {pct !== null ? (
+        <>
+          <div className="flex items-end justify-between mb-2">
+            <span dir="ltr" className="text-2xl font-bold text-gray-900 tabular-nums">
+              {pct.toFixed(0)}%
+            </span>
+            <span className="text-xs text-gray-500">{tank.source_label}</span>
+          </div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+              style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+            />
+          </div>
+          {tank.warning && <p className="text-[11px] text-gray-500 mt-3 leading-5">{tank.warning}</p>}
+        </>
+      ) : (
+        <p className="text-xs text-gray-500 leading-5">{tank.warning || 'مستوى الخزان غير متاح حالياً.'}</p>
+      )}
+    </ControlCard>
   );
 }
 

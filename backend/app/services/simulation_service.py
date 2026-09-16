@@ -30,7 +30,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import Device, DevicePot, Plant, Reading
+from app.models import AuxReading, Device, DevicePot, Plant, Reading
+from app.services.control_engine import safe_run_control_cycle
 from app.services.proactive_alerts import evaluate_proactive_alerts
 
 logger = logging.getLogger("uvicorn.error")
@@ -38,11 +39,25 @@ logger = logging.getLogger("uvicorn.error")
 # --- Public identity of the simulated node ---------------------------------
 SIM_DEVICE_NAME = "RAYY-SIM-TOMATO-001"
 SIM_SPECIES = "Tomato"
-SIM_NICKNAME = "Tomato Demo"
+# Display name of the simulated plant shown in the UI.
+SIM_NICKNAME = "مزرعة الطماطم"
+# Previous display name, kept only so `_ensure_plant` can rename an existing
+# plant row in place instead of leaving a stale "Tomato Demo" entry visible.
+SIM_NICKNAME_LEGACY = "Tomato Demo"
 SIM_SOURCE = "simulation"
 
 SIM_TICK_SECONDS = 3.0
 SIM_POT_INDEX = 0
+# Simulated water tank. The bench models a tank with a level sensor, so the
+# dashboard can show a real level instead of «غير متاح». The level drains while
+# the irrigation pump runs and recovers slowly otherwise — the same behaviour a
+# physical tank shows, written through the identical `aux_readings` path a real
+# level sensor posts to `/devices/{id}/report`.
+TANK_START_PCT = 80.0
+TANK_MIN_PCT = 8.0
+TANK_MAX_PCT = 100.0
+TANK_DRAIN_PCT_PER_TICK = 1.5
+TANK_REFILL_PCT_PER_TICK = 0.12
 
 
 class SimulationEngine:
@@ -60,6 +75,8 @@ class SimulationEngine:
         self._started_at: float | None = None
         self._reading_count = 0
         self._last_values: dict[str, float] | None = None
+        # Simulated tank level, carried across ticks so it evolves smoothly.
+        self._tank_pct = TANK_START_PCT
         # Randomised-but-fixed starting phase so two runs don't look identical.
         self._phase = random.random() * math.tau
 
@@ -81,6 +98,7 @@ class SimulationEngine:
             "started_at": self._started_at,
             "reading_count": self._reading_count,
             "last_values": self._last_values,
+            "tank_pct": round(self._tank_pct, 1),
         }
 
     # -- control -------------------------------------------------------------
@@ -154,8 +172,20 @@ class SimulationEngine:
         return device
 
     def _ensure_plant(self, db: Session, device: Device, user_id: int | None = None) -> int:
-        """Find (or create) the 'Tomato Demo' plant and bind it to pot 0."""
+        """Find (or create) the simulated plant, then bind it to pot 0."""
         owner_id = user_id if user_id is not None else _first_user_id(db)
+        # Rename any plant still carrying the old display name in place, so no
+        # "Tomato Demo" label survives in the UI and no duplicate plant is made.
+        if SIM_NICKNAME_LEGACY != SIM_NICKNAME:
+            stale = (
+                db.query(Plant)
+                .filter(Plant.nickname == SIM_NICKNAME_LEGACY, Plant.species == SIM_SPECIES)
+                .all()
+            )
+            for old in stale:
+                old.nickname = SIM_NICKNAME
+            if stale:
+                db.commit()
         plant = (
             db.query(Plant)
             .filter(Plant.nickname == SIM_NICKNAME, Plant.species == SIM_SPECIES)
@@ -206,8 +236,15 @@ class SimulationEngine:
                     if reading and reading.plant_id:
                         self._last_values = values
                         self._reading_count += 1
+                        # The tank level is written through the same
+                        # `aux_readings` row a real level sensor posts, so every
+                        # page reads one simulated tank state.
+                        self._persist_tank(db, device_id, plant_id)
                         await _broadcast(reading)
                         evaluate_proactive_alerts(db, reading.plant_id, reading)
+                        # The simulator feeds the same closed control loop as a
+                        # real node posting to /ingest.
+                        safe_run_control_cycle(db, reading.plant_id, reading)
                 except Exception:  # noqa: BLE001 - never kill the loop on one bad tick
                     logger.exception("Simulation tick failed")
                 finally:
@@ -249,6 +286,38 @@ class SimulationEngine:
             "soil_moisture": jitter(soil_moisture, 0.8, 5.0, 95.0),
             "ph": jitter(ph, 0.05, 4.0, 9.0),
         }
+
+    def _tank_running(self, db: Session, plant_id: int | None) -> bool:
+        """True while the simulated irrigation pump is on (tank is being drained)."""
+        if plant_id is None:
+            return False
+        from app.models import ControlSettings
+        settings = (
+            db.query(ControlSettings).filter(ControlSettings.plant_id == plant_id).first()
+        )
+        if settings is None:
+            return False
+        pump = (settings.actuators or {}).get("pump") or {}
+        return bool(pump.get("on"))
+
+    def _persist_tank(self, db: Session, device_id: int, plant_id: int | None) -> None:
+        """Advance and store the simulated tank level as an aux reading."""
+        draining = self._tank_running(db, plant_id)
+        delta = -TANK_DRAIN_PCT_PER_TICK if draining else TANK_REFILL_PCT_PER_TICK
+        self._tank_pct = max(TANK_MIN_PCT, min(TANK_MAX_PCT, self._tank_pct + delta))
+        try:
+            db.add(
+                AuxReading(
+                    device_id=device_id,
+                    plant_id=plant_id,
+                    ts=int(time.time()),
+                    water_level_pct=round(self._tank_pct, 1),
+                )
+            )
+            db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            logger.exception("Simulation tank persist failed")
 
     def _persist(
         self, db: Session, device_id: int, plant_id: int | None, values: dict[str, float]

@@ -82,6 +82,9 @@ class IngestReadingItem(BaseModel):
     light: float
     soil_moisture: float
     ph: float = 6.5
+    # Optional: only present when the matching sensor is actually installed.
+    water_level_pct: float | None = None
+    flow_lpm: float | None = None
 
 
 class IngestPayload(BaseModel):
@@ -146,6 +149,63 @@ class DeviceCommandOut(BaseModel):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class DeviceCapabilityItem(BaseModel):
+    """What the firmware says is wired to the board.
+
+    `kind` is "actuator" or "sensor"; `key` uses the stable identifiers in
+    `app.services.device_adapter` (pump, valve, fan, vent, grow_light,
+    temperature, humidity, light, soil_moisture, water_level, flow).
+
+    `variable` says whether the output accepts a 0-100% value (a dimmer or a
+    speed-controlled fan) or is plain on/off. Omit it and RAYY falls back to the
+    actuator's model; declare `false` and the UI shows ON/OFF only, never a
+    slider that cannot do anything.
+    """
+
+    key: str
+    kind: str = "actuator"
+    supported: bool = False
+    status: str = "not_installed"
+    detail: str | None = None
+    variable: bool | None = None
+
+
+class DeviceActuatorStateItem(BaseModel):
+    actuator: str
+    on: bool = False
+    value: float | None = None
+    error: str | None = None
+
+
+class DeviceReportRequest(BaseModel):
+    """Heartbeat from a real node: capabilities, actuator states, tank/flow."""
+
+    firmware_version: str | None = None
+    capabilities: list[DeviceCapabilityItem] | None = None
+    actuators: list[DeviceActuatorStateItem] | None = None
+    water_level_pct: float | None = None
+    flow_lpm: float | None = None
+
+
+class DeviceReportResponse(BaseModel):
+    ok: bool = True
+    server_time: int
+    poll_seconds: int = 3
+    emergency_stop: bool = False
+    plant_id: int | None = None
+    mode: str | None = None
+    note: str | None = None
+
+
+class DeviceCommandAck(BaseModel):
+    """Result of executing a command on the board (real feedback loop)."""
+
+    ok: bool
+    detail: str | None = None
+    value: float | None = None
+    water_used_l: float | None = None
 
 
 class DiagnosisOut(BaseModel):
@@ -239,6 +299,119 @@ class DiseaseMapPoint(BaseModel):
     region: str | None
     disease: str
     count: int
+
+
+class ControlRange(BaseModel):
+    min: float
+    max: float
+    ideal: float | None = None
+
+
+class ControlTargets(BaseModel):
+    temperature: ControlRange | None = None
+    humidity: ControlRange | None = None
+    soil_moisture: ControlRange | None = None
+    light: ControlRange | None = None
+
+
+class ControlSettingsUpdate(BaseModel):
+    """Partial update. Every field is optional -- only what is sent changes."""
+
+    mode: str | None = None
+    targets: dict | None = None
+    water_tank_pct: float | None = None
+    water_tank_capacity_l: float | None = None
+    # Pump runtime ceiling (seconds). Omit to leave unchanged; send 0 to reset
+    # to the engine default. Values outside the allowed range are rejected.
+    irrigation_max_runtime_sec: int | None = None
+
+
+class ControlModeRequest(BaseModel):
+    plant_id: int
+    mode: str
+
+
+class ControlManualCommand(BaseModel):
+    plant_id: int
+    actuator: str
+    action: str  # on | off | set
+    value: float | None = None
+    duration_sec: int | None = None
+
+
+class ControlAutoRequest(BaseModel):
+    plant_id: int
+
+
+class ControlEmergencyStopRequest(BaseModel):
+    plant_id: int
+    reason: str | None = None
+
+
+class ControlScheduleCreate(BaseModel):
+    plant_id: int
+    system: str
+    actuator: str | None = None
+    action: str = "on"
+    value: float | None = None
+    duration_sec: int = 0
+    time_of_day: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])
+    enabled: bool = True
+    note: str | None = None
+
+
+class ControlScheduleUpdate(BaseModel):
+    """Partial edit of a scheduled task. Only what is sent changes."""
+
+    system: str | None = None
+    action: str | None = None
+    value: float | None = None
+    duration_sec: int | None = None
+    time_of_day: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    days: list[int] | None = None
+    enabled: bool | None = None
+    note: str | None = None
+
+
+class ControlEventOut(BaseModel):
+    id: int
+    plant_id: int
+    system: str
+    system_label: str | None = None
+    actuator: str | None
+    actuator_label: str | None = None
+    action: str
+    action_label: str | None = None
+    value: float | None
+    reason: str
+    result: str
+    result_detail: str | None
+    source: str
+    severity: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ControlScheduleOut(BaseModel):
+    id: int
+    plant_id: int
+    system: str
+    system_label: str | None = None
+    actuator: str | None
+    actuator_label: str | None = None
+    action: str
+    action_label: str | None = None
+    value: float | None
+    duration_sec: int
+    time_of_day: str
+    days: list[int]
+    enabled: bool
+    note: str | None
+    last_run_at: datetime | None
+
+    model_config = {"from_attributes": True}
 
 
 class ChatRequest(BaseModel):

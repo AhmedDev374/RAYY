@@ -13,7 +13,19 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine
-from app.routers import auth, care, chat, content, devices, diagnosis, plants, sensors, simulation
+from app.routers import (
+    auth,
+    care,
+    chat,
+    content,
+    control,
+    devices,
+    diagnosis,
+    plants,
+    sensors,
+    simulation,
+)
+from app.services.schema_sync import sync_schema
 from app.services.seed import seed_species_profiles
 
 logger = logging.getLogger("uvicorn.error")
@@ -103,6 +115,10 @@ async def lifespan(app: FastAPI):
         (Path(__file__).resolve().parent / "ml" / "exports" / "smart_plant_doctor_model.pth").is_file(),
     )
     Base.metadata.create_all(bind=engine)
+    # create_all() only creates missing tables -- it never adds a column to a
+    # table that already exists, so an older database 500s on every query that
+    # touches a newly declared column. Apply the additive-only sync here.
+    sync_schema(engine)
     db = SessionLocal()
     try:
         seed_species_profiles(db)
@@ -156,6 +172,7 @@ app.include_router(plants.router, prefix=prefix)
 app.include_router(devices.router, prefix=prefix)
 app.include_router(sensors.router, prefix=prefix)
 app.include_router(simulation.router, prefix=prefix)
+app.include_router(control.router, prefix=prefix)
 app.include_router(diagnosis.router, prefix=prefix)
 app.include_router(care.router, prefix=prefix)
 app.include_router(content.router, prefix=prefix)

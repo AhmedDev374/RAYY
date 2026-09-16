@@ -269,8 +269,7 @@ className="h-6 w-5 shrink-0 group-hover:scale-105 transition-transform duration-
           </h1>
 
           <p className="text-lg sm:text-xl text-gray-300 max-w-2xl mx-auto mb-10 leading-relaxed">
-            رَيّ — RAYY منصة ري ذكية تراقب الظروف الزراعية وتُدير الري تلقائيًا باستخدام
-            أجهزة الاستشعار والبيانات والقرارات الذكية، لتحسين استهلاك المياه ودعم نموّ النباتات.
+            رَيّ — RAYY منصة زراعية ذكية لمراقبة وإدارة البيئة الزراعية، مع فحص النباتات بالصور والذكاء الاصطناعي، وتوفر موسوعة زراعية ومساعدًا ذكيًا لدعم صحة ونمو النباتات.
           </p>
 
           <div className="flex flex-wrap justify-center gap-4">

@@ -18,6 +18,21 @@ interface Plant {
   created_at?: string;
 }
 
+/**
+ * Format an ISO timestamp as a day/month/year date (dd/mm/yyyy), matching the
+ * Arabic copy used on the plant card (e.g. "تمت الإضافة في 14/09/2026").
+ * Built from the parsed parts so the output is deterministic regardless of the
+ * browser's locale settings.
+ */
+function formatAddedDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 export default function PlantsPage() {
   const qc = useQueryClient();
   const [nickname, setNickname] = useState('');
@@ -55,6 +70,13 @@ export default function PlantsPage() {
     category === 'all' ? catalog : catalog.filter((s) => s.category === category);
 
   const selectedProfile = catalog.find((s) => s.species === species);
+
+  // Display the plant type in Arabic using the encyclopedia catalog's `name_ar`,
+  // so the label always matches the selected plant (e.g. Aloe Vera -> "الألوفيرا",
+  // Tomato -> "الطماطم"). Falls back to the stored species key if the catalog
+  // has not loaded yet; nothing is hardcoded.
+  const speciesNameAr = (speciesKey: string) =>
+    catalog.find((s) => s.species === speciesKey)?.name_ar ?? speciesKey;
 
   // When the category changes, clear a selection that is no longer in the
   // filtered list (the placeholder "اختر نوع النبات" shows again). We never
@@ -251,7 +273,7 @@ export default function PlantsPage() {
                 <div className="absolute top-3 right-3">
                   <span className="inline-flex items-center gap-1 bg-white/90 backdrop-blur-sm text-xs font-medium text-leaf-700 px-2.5 py-1 rounded-full">
                     <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    Active
+                    نشط
                   </span>
                 </div>
               </div>
@@ -259,10 +281,10 @@ export default function PlantsPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <h2 className="font-bold text-lg text-gray-800">{p.nickname}</h2>
-                    <p className="text-gray-500 text-sm">{p.species}</p>
+                    <p className="text-gray-500 text-sm">{speciesNameAr(p.species)}</p>
                     {p.created_at && (
                       <p className="text-gray-400 text-xs mt-1">
-                        Added {new Date(p.created_at).toLocaleDateString()}
+                        تمت الإضافة في {formatAddedDate(p.created_at)}
                       </p>
                     )}
                   </div>
@@ -272,7 +294,7 @@ export default function PlantsPage() {
                     to={`/care-log/${p.id}`}
                     className="inline-flex items-center gap-1 text-sm font-medium text-leaf-700 hover:text-leaf-800 transition-colors"
                   >
-                    Care log
+                    سجل العناية
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>

@@ -22,7 +22,12 @@ def _build_context(db: Session, user: User, plant_id: int | None) -> str:
     if not plant:
         raise HTTPException(status_code=404, detail="Plant not found")
 
-    reading = db.query(Reading).filter(Reading.plant_id == plant_id).order_by(Reading.ts.desc()).first()
+    reading = (
+        db.query(Reading)
+        .filter(Reading.plant_id == plant_id)
+        .order_by(Reading.ts.desc(), Reading.id.desc())
+        .first()
+    )
     diagnosis = (
         db.query(Diagnosis)
         .filter(Diagnosis.plant_id == plant_id, Diagnosis.status == "success")

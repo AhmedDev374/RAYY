@@ -1,0 +1,16 @@
+export {
+  COLLAPSIBLE_SECTIONS,
+  CollapsibleProvider,
+  allCollapsed,
+  allExpanded,
+  createCollapsibleStore,
+  DEFAULT_COLLAPSED,
+  MAX_VISIBLE_DEFAULT_OPEN,
+  useCollapsibleExpanded,
+  useCollapsibleStore,
+  useGlobalSectionControls,
+  useSectionToggle,
+  type CollapsibleStore,
+  type SectionKey,
+  type SectionState,
+} from './CollapsibleContext';

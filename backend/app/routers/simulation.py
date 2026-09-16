@@ -33,7 +33,7 @@ async def start_simulation(
     db: Session = Depends(get_db),
 ) -> SimulationState:
     """Turn Simulation Mode ON. Safe to call repeatedly (idempotent)."""
-    # Pass the caller so the "Tomato Demo" plant is owned by them and visible
+    # Pass the caller so the simulated plant is owned by them and visible
     # in their plant list / readings endpoints.
     await simulation_engine.start(db, user_id=user.id)
     return _state()

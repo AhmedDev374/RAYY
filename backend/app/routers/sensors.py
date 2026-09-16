@@ -7,10 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user, get_user_from_token_string
-from app.models import Device, DevicePot, Plant, Reading, User
+from app.models import AuxReading, Device, DevicePot, Plant, Reading, User
 from app.schemas import BlynkReadingsResponse, DeviceCommandOut, IngestPayload, ReadingOut
-from app.security import hash_token
 from app.services.blynk_service import fetch_readings as fetch_blynk_readings
+from app.services.control_engine import safe_run_control_cycle
+from app.services.device_auth import get_device_from_token as _device_from_token
 from app.services.proactive_alerts import evaluate_proactive_alerts
 from app.ws_manager import ws_manager
 
@@ -37,13 +38,8 @@ async def get_blynk_readings(
 
 
 def _get_device_from_token(authorization: str, db: Session) -> Device:
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="unauthorized")
-    token = authorization.removeprefix("Bearer ").strip()
-    device = db.query(Device).filter(Device.token_hash == hash_token(token), Device.is_claimed == True).first()
-    if not device:
-        raise HTTPException(status_code=401, detail="unauthorized")
-    return device
+    """Single implementation lives in `services/device_auth.py`."""
+    return _device_from_token(db, authorization)
 
 
 @router.post("/ingest")
@@ -74,6 +70,20 @@ async def ingest(
         db.add(reading)
         inserted.append(reading)
 
+        # Water level / flow are only sent when those sensors are actually
+        # installed; they are stored separately so no fabricated value can ever
+        # masquerade as a real reading.
+        if item.water_level_pct is not None or item.flow_lpm is not None:
+            db.add(
+                AuxReading(
+                    device_id=device.id,
+                    plant_id=plant_id,
+                    ts=item.ts,
+                    water_level_pct=item.water_level_pct,
+                    flow_lpm=item.flow_lpm,
+                )
+            )
+
     db.commit()
 
     for reading in inserted:
@@ -92,6 +102,9 @@ async def ingest(
             }
             await ws_manager.broadcast(reading.plant_id, data)
             evaluate_proactive_alerts(db, reading.plant_id, reading)
+            # Closed loop: every fresh reading re-runs the control rules and
+            # records whatever decision (and delivery outcome) followed.
+            safe_run_control_cycle(db, reading.plant_id, reading)
 
     return {"ok": True, "count": len(inserted)}
 
@@ -109,7 +122,9 @@ def get_readings(
     return (
         db.query(Reading)
         .filter(Reading.plant_id == plant_id)
-        .order_by(Reading.ts.desc())
+        # `id` breaks ties: several pots can report within the same second, and
+        # without it the "latest" reading is whichever row SQLite returns first.
+        .order_by(Reading.ts.desc(), Reading.id.desc())
         .limit(limit)
         .all()
     )
@@ -124,7 +139,12 @@ def get_latest_reading(
     plant = db.query(Plant).filter(Plant.id == plant_id, Plant.user_id == user.id).first()
     if not plant:
         raise HTTPException(status_code=404, detail="Plant not found")
-    return db.query(Reading).filter(Reading.plant_id == plant_id).order_by(Reading.ts.desc()).first()
+    return (
+        db.query(Reading)
+        .filter(Reading.plant_id == plant_id)
+        .order_by(Reading.ts.desc(), Reading.id.desc())
+        .first()
+    )
 
 
 @router.websocket("/ws/plants/{plant_id}")

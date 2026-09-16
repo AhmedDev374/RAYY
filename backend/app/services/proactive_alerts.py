@@ -10,7 +10,9 @@ def evaluate_proactive_alerts(db: Session, plant_id: int, reading: Reading) -> l
     recent = (
         db.query(Reading)
         .filter(Reading.plant_id == plant_id)
-        .order_by(Reading.ts.desc())
+        # `id` breaks timestamp ties so a soil-moisture trend is read in the
+        # order the readings actually arrived.
+        .order_by(Reading.ts.desc(), Reading.id.desc())
         .limit(4)
         .all()
     )

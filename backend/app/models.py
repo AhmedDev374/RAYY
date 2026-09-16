@@ -58,6 +58,9 @@ class Device(Base):
     pots: Mapped[list["DevicePot"]] = relationship(back_populates="device")
     readings: Mapped[list["Reading"]] = relationship(back_populates="device")
     pending_commands: Mapped[list["DeviceCommand"]] = relationship(back_populates="device")
+    capabilities: Mapped[list["DeviceCapability"]] = relationship(back_populates="device")
+    actuator_states: Mapped[list["DeviceActuatorState"]] = relationship(back_populates="device")
+    aux_readings: Mapped[list["AuxReading"]] = relationship()
 
 
 class DevicePot(Base):
@@ -208,3 +211,192 @@ class DeviceCommand(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     device: Mapped["Device"] = relationship(back_populates="pending_commands")
+
+
+# ---------------------------------------------------------------------------
+# RAYY Control System (نظام التحكم)
+#
+# Three *new* tables only. Nothing on the existing tables is altered, because
+# `Base.metadata.create_all()` creates missing tables but never ALTERs existing
+# ones -- so adding columns to `plants`/`devices` would silently break deployed
+# databases. Control state therefore hangs off `plant_id` in its own tables.
+# ---------------------------------------------------------------------------
+
+CONTROL_MODES = ("auto", "manual", "scheduled")
+
+
+def _default_targets() -> dict:
+    return {"temperature": {}, "humidity": {}, "soil_moisture": {}, "light": {}}
+
+
+def _default_actuators() -> dict:
+    # Last state RAYY *commanded* for each actuator. This is an intent log, not
+    # a hardware reading: the UI labels it as such whenever no device is
+    # actually connected (see `services/device_adapter.py`).
+    return {
+        "pump": {"on": False, "value": None, "updated_at": None, "source": None},
+        "fan": {"on": False, "value": 0, "updated_at": None, "source": None},
+        "vent": {"on": False, "value": 0, "updated_at": None, "source": None},
+        "grow_light": {"on": False, "value": None, "updated_at": None, "source": None},
+    }
+
+
+class ControlSettings(Base):
+    """Per-plant control configuration (mode, target overrides, last intents)."""
+
+    __tablename__ = "control_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    plant_id: Mapped[int] = mapped_column(ForeignKey("plants.id"), unique=True, index=True)
+
+    # "auto" | "manual" | "scheduled"
+    mode: Mapped[str] = mapped_column(String(20), default="auto")
+    emergency_stop: Mapped[bool] = mapped_column(Boolean, default=False)
+    emergency_stop_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Sparse overrides on top of the species thresholds, e.g.
+    # {"temperature": {"min": 22, "max": 28}, ...}
+    targets: Mapped[dict] = mapped_column(JSON, default=_default_targets)
+    actuators: Mapped[dict] = mapped_column(JSON, default=_default_actuators)
+
+    # Water tank. There is no level sensor in the current firmware, so this is
+    # either NULL ("المستوى غير معروف") or a value the user entered by hand.
+    water_tank_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    water_tank_capacity_l: Mapped[float] = mapped_column(Float, default=20.0)
+    water_used_today_l: Mapped[float] = mapped_column(Float, default=0.0)
+    water_used_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+    # Safety: how long the irrigation pump may stay on before RAYY cuts it.
+    # NULL means "use the engine default"; the engine never allows no limit.
+    irrigation_max_runtime_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ControlEvent(Base):
+    """Control log entry (سجل التحكم) -- one row per decision/action."""
+
+    __tablename__ = "control_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    plant_id: Mapped[int] = mapped_column(ForeignKey("plants.id"), index=True)
+
+    system: Mapped[str] = mapped_column(String(30), index=True)
+    actuator: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    action: Mapped[str] = mapped_column(String(30))
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+
+    # executed | queued | blocked | unsupported | offline | info
+    result: Mapped[str] = mapped_column(String(20), default="info")
+    result_detail: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # auto | manual | schedule | safety
+    source: Mapped[str] = mapped_column(String(20), default="auto")
+    # ok | info | warning | critical
+    severity: Mapped[str] = mapped_column(String(20), default="info")
+
+    # Dedupe key so the 3-second sensor pipeline logs a decision once, and logs
+    # it again only when the decision actually changes.
+    signature: Mapped[str] = mapped_column(String(160), index=True, default="")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Device I/O (طبقة الأجهزة الحقيقية)
+#
+# The firmware *declares* which sensors and actuators are actually installed on
+# the board (`POST /api/v1/devices/{id}/report`). Everything the UI shows about
+# hardware is derived from these rows -- never assumed, never invented. Legacy
+# firmware that never reports gets a conservative capability set instead.
+# ---------------------------------------------------------------------------
+
+DEVICE_CAPABILITY_KINDS = ("actuator", "sensor")
+
+# ok          -> installed and answering
+# error       -> installed but the device reported a read/actuation fault
+# not_installed -> firmware knows the pin but no hardware is wired
+CAPABILITY_STATUSES = ("ok", "error", "not_installed")
+
+
+class DeviceCapability(Base):
+    __tablename__ = "device_capabilities"
+    __table_args__ = (UniqueConstraint("device_id", "key", name="uq_device_capability"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), index=True)
+    key: Mapped[str] = mapped_column(String(40), index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="actuator")
+    supported: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(20), default="not_installed")
+    detail: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # NULL = the firmware did not say. True only when the output really accepts
+    # a 0-100% value (dimming / speed), so the UI never offers a dead slider.
+    variable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    device: Mapped["Device"] = relationship(back_populates="capabilities")
+
+
+class DeviceActuatorState(Base):
+    """Actuator state *reported by the device* (real feedback, not an intent)."""
+
+    __tablename__ = "device_actuator_states"
+    __table_args__ = (UniqueConstraint("device_id", "actuator", name="uq_device_actuator"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), index=True)
+    actuator: Mapped[str] = mapped_column(String(40), index=True)
+    on: Mapped[bool] = mapped_column(Boolean, default=False)
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    device: Mapped["Device"] = relationship(back_populates="actuator_states")
+
+
+class AuxReading(Base):
+    """Readings from sensors that are not part of the original 5-value payload.
+
+    Water level and flow live in their own table because `readings` already
+    exists in deployed databases and cannot gain columns safely.
+    """
+
+    __tablename__ = "aux_readings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), index=True)
+    plant_id: Mapped[int | None] = mapped_column(ForeignKey("plants.id"), index=True, nullable=True)
+    ts: Mapped[int] = mapped_column(Integer, index=True)
+    water_level_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    flow_lpm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ControlSchedule(Base):
+    """Scheduled control action (التشغيل المجدول)."""
+
+    __tablename__ = "control_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    plant_id: Mapped[int] = mapped_column(ForeignKey("plants.id"), index=True)
+
+    system: Mapped[str] = mapped_column(String(30))
+    actuator: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    action: Mapped[str] = mapped_column(String(30), default="on")
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_sec: Mapped[int] = mapped_column(Integer, default=0)
+
+    time_of_day: Mapped[str] = mapped_column(String(5))  # "HH:MM"
+    days: Mapped[list] = mapped_column(JSON, default=lambda: [0, 1, 2, 3, 4, 5, 6])
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    note: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
