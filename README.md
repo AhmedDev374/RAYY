@@ -1,689 +1,379 @@
-# RAYY
+# RAYY (رَيّ)
 
 ### Intelligent Greenhouse & Smart Agriculture Management Platform
 
-RAYY (رَيّ) is an intelligent agriculture platform designed to connect greenhouse monitoring, smart irrigation, plant health analysis, AI assistance, and IoT devices into a unified management system.
+RAYY is a full-stack platform for managing a multi-plant greenhouse: it combines real-time environmental monitoring, AI-based plant disease diagnosis, a conversational plant-care assistant, a bilingual plant encyclopedia, and a closed-loop irrigation/climate control engine into a single system.
 
-The platform is designed to help growers monitor plant conditions, understand environmental data, manage irrigation, detect potential plant diseases, and interact with an AI-powered plant-care assistant through a modern web interface.
+The name *رَيّ* is the Arabic word for **irrigation**, and the platform's interface and content are Arabic-first.
 
----
-
-## 🌱 Project Overview
-
-Modern greenhouse management often requires growers to monitor multiple environmental conditions and make irrigation and plant-care decisions manually.
-
-RAYY provides a centralized platform for managing these tasks through:
-
-- Real-time greenhouse monitoring
-- Environmental sensor data
-- Smart irrigation controls
-- Plant health and disease analysis
-- AI-assisted plant-care guidance
-- Multi-plant management
-- ESP32-based IoT integration
-- Real-time WebSocket communication
-- A Tomato Demo Simulation for testing the IoT data flow without physical hardware
-
-The goal is to create a practical engineering platform where hardware, software, AI, and agriculture work together rather than operating as isolated components.
+<p align="center">
+  <img src="docs/screenshots/landing-page.png" alt="RAYY landing page" width="850">
+</p>
 
 ---
 
-## 🎯 Why RAYY?
+## Table of Contents
 
-### The Problem
-
-Greenhouse management can involve several disconnected tasks:
-
-- Monitoring temperature and humidity
-- Checking soil moisture
-- Managing irrigation
-- Identifying plant diseases
-- Tracking individual plants
-- Interpreting sensor readings
-- Making timely plant-care decisions
-
-When these tasks are performed manually or through disconnected systems, it becomes difficult to maintain a complete view of the greenhouse.
-
-### The RAYY Approach
-
-RAYY brings these capabilities together in one platform.
-
-```text
-Sensors / IoT Devices
-        │
-        ▼
-   Data Collection
-        │
-        ▼
-      RAYY API
-        │
-   ┌────┴────┐
-   ▼         ▼
-Database   AI Services
-   │         │
-   └────┬────┘
-        ▼
- Web Dashboard
-        │
-        ▼
-Monitoring • Irrigation • Diagnosis • Assistance
-````
+- [Overview](#overview)
+- [The Agricultural Challenge](#the-agricultural-challenge)
+- [The RAYY Solution](#the-rayy-solution)
+- [Core Modules](#core-modules)
+  - [Dashboard & Environmental Monitoring](#dashboard--environmental-monitoring)
+  - [Plant Management](#plant-management)
+  - [AI Plant Diagnosis](#ai-plant-diagnosis)
+  - [Plant Encyclopedia](#plant-encyclopedia)
+  - [AI Plant-Care Assistant](#ai-plant-care-assistant)
+  - [Irrigation & Greenhouse Control](#irrigation--greenhouse-control)
+  - [IoT Devices & Simulation Mode](#iot-devices--simulation-mode)
+- [Architecture](#architecture)
+- [Technology Stack](#technology-stack)
+- [API Reference](#api-reference)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Current Implementation vs. Physical Integration](#current-implementation-vs-physical-integration)
+- [License](#license)
 
 ---
 
-# ✨ Key Features
+## Overview
 
-| Feature                    | Description                                                                       |
-| -------------------------- | --------------------------------------------------------------------------------- |
-| 🌡️ Real-Time Monitoring   | Monitor greenhouse environmental readings through the web dashboard               |
-| 💧 Smart Irrigation        | Manage irrigation-related actions using plant and environmental data              |
-| 🩺 AI Disease Detection    | Analyze plant images using the integrated AI inference system                     |
-| 🤖 AI Plant-Care Assistant | Interact with an AI assistant for plant-care guidance                             |
-| 🌱 Multi-Plant Management  | Manage individual plants and their associated information                         |
-| 📡 IoT Integration         | Connect greenhouse devices through ESP32 firmware                                 |
-| 🔄 WebSockets              | Receive real-time plant and sensor updates                                        |
-| 🧪 Tomato Demo Simulation  | Reproduce the IoT data flow for development and testing without physical hardware |
-| 🔐 Authentication          | Protected application access through the configured authentication system         |
-| 📊 Dashboard               | Centralized view of greenhouse and plant information                              |
+A greenhouse rarely holds a single crop. Different species need different soil moisture, temperature, humidity, and light, and their conditions change throughout the day and across seasons. Managing that manually — walking the rows, reading gauges, guessing at irrigation timing, and inspecting leaves by eye for disease — does not scale as the number of plants and beds grows.
 
----
+RAYY addresses this by giving each plant its own profile and target thresholds, continuously comparing live sensor readings against those thresholds, and centralizing four things that are normally scattered across notebooks, spreadsheets, and intuition:
 
-# 🔄 System Workflow
+- **Monitoring** — live environmental data per plant (temperature, humidity, soil moisture, light, water level).
+- **Diagnosis** — AI-based leaf disease screening from a photo.
+- **Knowledge** — a structured, bilingual encyclopedia of plant care requirements.
+- **Action** — an irrigation and climate control engine that can run automatically, on a schedule, or be operated manually, with hardware safety guards built in.
 
-RAYY is structured around a continuous data flow between the greenhouse, backend services, AI components, and the user interface.
+## The Agricultural Challenge
 
-```mermaid
-flowchart TD
-    A[Greenhouse Sensors] --> B[ESP32 / IoT Layer]
-    B --> C[Backend API]
-    C --> D[(Database)]
+Greenhouse and multi-plant cultivation involves several recurring difficulties that RAYY is designed around:
 
-    C --> E[Real-Time WebSocket Stream]
-    E --> F[Web Dashboard]
+| Challenge | Description |
+|---|---|
+| Continuous monitoring | Environmental conditions can drift outside a plant's safe range at any hour, not just when someone is present to check. |
+| Species-specific requirements | A single set of watering or climate rules cannot serve roses, tomatoes, aloe vera, and turmeric equally well. |
+| Manual intervention | Irrigation and ventilation decisions made by hand are inconsistent and easy to forget. |
+| Disease detection | Early-stage disease symptoms are easy to miss without regular, careful visual inspection. |
+| Fragmented information | Care guidelines, sensor history, diagnosis records, and control settings usually live in different places. |
 
-    G[Plant Image] --> H[AI Disease Detection]
-    H --> C
+## The RAYY Solution
 
-    F --> I[User Actions]
-    I --> C
-
-    J[AI Plant-Care Assistant] --> C
-
-    C --> K[Irrigation / Device Commands]
-    K --> B
-```
-
----
-
-# 📊 Real-Time Greenhouse Dashboard
-
-The RAYY dashboard provides a centralized interface for viewing greenhouse and plant information.
-
-Depending on the connected system configuration, the platform can work with environmental readings such as:
-
-* Temperature
-* Humidity
-* Soil moisture
-* Light-related measurements
-* Device status
-* Plant information
-* Sensor timestamps
-
-Real-time communication is supported through the backend's WebSocket functionality.
-
-The dashboard is designed to provide a clear operational view instead of requiring users to inspect individual sensors or devices separately.
-
----
-
-# 💧 Smart Irrigation
-
-RAYY includes irrigation-related functionality connecting the software platform with the greenhouse device layer.
-
-The system provides the infrastructure required to:
-
-1. Receive environmental readings.
-2. Process the readings through the backend.
-3. Associate information with plants and devices.
-4. Trigger irrigation-related actions.
-5. Communicate commands toward the IoT layer.
-
-The exact irrigation behavior depends on the configured plants, devices, sensors, and backend logic.
-
-RAYY therefore treats irrigation as part of an integrated greenhouse control system rather than as an isolated water-pump controller.
-
----
-
-# 🩺 AI Plant Disease Detection
-
-RAYY includes an AI-based plant image diagnosis workflow.
-
-A user can provide a plant image through the application, after which the backend passes the image through the project's configured inference pipeline.
-
-```text
-Plant Image
-    │
-    ▼
-Image Processing
-    │
-    ▼
-AI Inference
-    │
-    ▼
-Prediction
-    │
-    ▼
-Diagnosis Result
-    │
-    ▼
-RAYY Interface
-```
-
-The inference implementation is checkpoint/configuration driven, allowing the project to use the model configuration available in the repository rather than hard-coding an unsupported architecture claim in the documentation.
-
-> **Important:** Model performance depends on the trained checkpoint, dataset, image quality, and inference configuration being used. RAYY does not claim a universal accuracy value independent of the deployed model.
-
----
-
-# 🤖 AI Plant-Care Assistant
-
-RAYY also includes an AI-powered plant-care assistant.
-
-The assistant provides a conversational interface for plant-related questions and guidance.
-
-The backend integrates with the configured Google GenAI SDK and model configuration.
-
-Typical interaction flow:
-
-```text
-User Question
-     │
-     ▼
-RAYY Backend
-     │
-     ▼
-AI Assistant Service
-     │
-     ▼
-Generated Response
-     │
-     ▼
-Web Application
-```
-
-The exact AI model used can be configured through the project's environment settings.
-
----
-
-# 🌱 Multi-Plant Management
-
-RAYY is designed around individual plant management rather than assuming that a greenhouse contains only one plant type.
-
-Plants can be represented individually within the application and associated with the available greenhouse data and functionality.
-
-This architecture allows the platform to evolve toward greenhouse environments containing different crops and plant varieties.
-
----
-
-# 📡 IoT / ESP32 Integration
-
-The repository contains ESP32 firmware and IoT integration components.
-
-The ESP32 layer is responsible for interacting with the physical greenhouse environment and communicating sensor/device information with the software platform.
-
-A typical architecture is:
-
-```text
-┌───────────────────────────┐
-│       Greenhouse          │
-│                           │
-│ Sensors      Pumps        │
-│    │           │          │
-└────┼───────────┼──────────┘
-     │           │
-     ▼           ▼
-        ESP32
-          │
-          │ Network
-          ▼
-      RAYY Backend
-          │
-     ┌────┴─────┐
-     ▼          ▼
- Database    WebSocket
-     │          │
-     └────┬─────┘
-          ▼
-     RAYY Dashboard
-```
-
-The presence of firmware and integration support should not be interpreted as a claim that a physical greenhouse is currently deployed in production.
-
----
-
-# 🧪 Tomato Demo Simulation
-
-RAYY includes a Tomato Demo Simulation mode intended for development, demonstration, and system testing.
-
-The purpose of this mode is to reproduce the IoT data flow when physical greenhouse hardware is not connected.
-
-Instead of requiring an ESP32 and physical sensors during every development session, the simulation can provide the application with a controlled stream of greenhouse-style readings.
-
-Conceptually:
-
-```text
-Tomato Demo Simulation
-          │
-          ▼
-   Simulated IoT Readings
-          │
-          ▼
-      RAYY Backend
-          │
-          ▼
-   WebSocket / Database
-          │
-          ▼
-     Live Dashboard
-```
-
-This allows the complete software communication path to be tested before connecting physical greenhouse hardware.
-
-The simulation is therefore a **demonstration and testing mode for the IoT pipeline**, not a replacement for physical greenhouse deployment.
-
----
-
-# 🖼️ Screenshots
-
-## Landing Page
-
-The RAYY landing page introduces the platform and its main capabilities.
-
-![RAYY Landing Page](docs/screenshots/landing-page.png)
-
----
-
-## Greenhouse Dashboard
-
-The dashboard provides the main operational interface for monitoring plants and greenhouse information.
-
-![RAYY Dashboard](docs/screenshots/dashboard.png)
-
----
-
-## AI Disease Detection
-
-The diagnosis interface provides the workflow for submitting plant images for AI-based analysis.
-
-![RAYY Disease Detection](docs/screenshots/disease-detection.png)
-
----
-
-## AI Plant-Care Assistant
-
-The assistant provides a conversational interface for plant-care interaction.
-
-![RAYY AI Assistant](docs/screenshots/chat.png)
-
----
-
-# 🏗️ System Architecture
-
-RAYY follows a layered architecture separating the user interface, backend services, data persistence, AI functionality, and device integration.
+RAYY is built around a closed monitor–analyze–decide–control loop rather than a passive dashboard:
 
 ```mermaid
 flowchart LR
-
-    subgraph Client["Client Layer"]
-        UI["React Web Application"]
-    end
-
-    subgraph Backend["Backend Layer"]
-        API["FastAPI API"]
-        WS["WebSocket Services"]
-        AUTH["Authentication"]
-    end
-
-    subgraph Intelligence["AI Layer"]
-        DIAG["Plant Disease Inference"]
-        ASSIST["AI Plant-Care Assistant"]
-    end
-
-    subgraph Data["Data Layer"]
-        DB["SQL Database"]
-    end
-
-    subgraph IoT["IoT Layer"]
-        ESP["ESP32 Firmware"]
-        SENSOR["Sensors"]
-        ACT["Actuators"]
-    end
-
-    UI --> API
-    UI --> WS
-    API --> AUTH
-    API --> DB
-
-    API --> DIAG
-    API --> ASSIST
-
-    SENSOR --> ESP
-    ESP --> API
-    API --> ESP
-    ESP --> ACT
+    A[Sensors] --> B[Environmental Data]
+    B --> C[RAYY Platform]
+    C --> D[Intelligent Analysis]
+    D --> E[Decision]
+    E --> F[Control Action]
+    F --> G[Greenhouse Response]
+    G --> A
 ```
 
----
-
-# 🧰 Technology Stack
-
-The current repository uses the following technologies and frameworks.
-
-| Layer                    | Technology                  |
-| ------------------------ | --------------------------- |
-| Frontend                 | React                       |
-| Language                 | TypeScript                  |
-| Build Tool               | Vite                        |
-| Styling                  | Tailwind CSS                |
-| Data Fetching            | TanStack Query              |
-| Backend                  | FastAPI                     |
-| Backend Language         | Python                      |
-| ORM                      | SQLAlchemy                  |
-| Migrations               | Alembic                     |
-| Database                 | SQLite / PostgreSQL support |
-| Real-Time Communication  | WebSockets                  |
-| AI Vision                | PyTorch / TorchVision       |
-| AI Assistant             | Google GenAI SDK            |
-| IoT                      | ESP32                       |
-| Firmware Framework       | PlatformIO                  |
-| Authentication           | Supabase token verification |
-| Containerization         | Docker                      |
-| Deployment Configuration | Vercel / Railway / Render   |
+Readings arrive through the ingestion API or the built-in simulator, are compared against each plant's target thresholds (from the encyclopedia or per-plant overrides), and the control engine turns that comparison into a proportional actuator decision — not a blind on/off switch — while enforcing safety rules such as pump-runtime limits, no-flow detection, and an emergency stop.
 
 ---
 
-# 🔐 Authentication
+## Core Modules
 
-RAYY includes authentication functionality in the application and backend.
+### Dashboard & Environmental Monitoring
 
-The backend supports authentication through the configured Supabase authentication/token verification setup.
+The dashboard is the central view of the greenhouse: live sensor readings, environmental trend charts, irrigation and device status, and per-plant condition summaries, delivered to the browser over a WebSocket connection for real-time updates.
 
-Authentication-related configuration is supplied through environment variables rather than being hard-coded into the repository.
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/dashboard_1.png" alt="RAYY dashboard"></td>
+<td width="50%"><img src="docs/screenshots/dashboard_2.png" alt="RAYY dashboard"></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/dashboard_3.png" alt="RAYY dashboard"></td>
+<td width="50%"><img src="docs/screenshots/dashboard_4.png" alt="RAYY dashboard"></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/dashboard_5.png" alt="RAYY dashboard"></td>
+<td width="50%"><img src="docs/screenshots/dashboard_6.png" alt="RAYY dashboard"></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/dashboard_7.png" alt="RAYY dashboard"></td>
+<td width="50%"><img src="docs/screenshots/dashboard_8.png" alt="RAYY dashboard"></td>
+</tr>
+</table>
 
-> Never commit private authentication credentials, service-role keys, OAuth secrets, database passwords, or other sensitive configuration values.
+### Plant Management
+
+Each plant in the greenhouse is registered individually — species, name, and location — which is what allows the platform to apply per-plant thresholds instead of a single global rule set.
+
+<table>
+<tr>
+<td width="33%"><img src="docs/screenshots/add_plant_1.png" alt="Add plant flow"></td>
+<td width="33%"><img src="docs/screenshots/add_plant_2.png" alt="Add plant flow"></td>
+<td width="33%"><img src="docs/screenshots/add_plant_3.png" alt="Add plant flow"></td>
+</tr>
+</table>
+
+### AI Plant Diagnosis
+
+Users upload a close-up leaf photo and receive an AI-generated screening result: predicted condition, confidence score, and guidance on next steps. Diagnoses are stored per plant so a history of past results is available.
+
+<p align="center">
+  <img src="docs/screenshots/disease-detection.png" alt="AI disease detection" width="850">
+</p>
+<p align="center">
+  <img src="docs/screenshots/disease-detection3.png" alt="AI disease detection result" width="850">
+</p>
+
+**Model details (as shipped in the repository):**
+
+| Property | Value |
+|---|---|
+| Architecture | EfficientNet-B0 |
+| Framework | PyTorch / TorchVision |
+| Input | 224 × 224 RGB image |
+| Classes | 39 (38 crop/disease combinations across 14 crops, plus a `Non_leaf_or_unknown` rejection class) |
+| Supported crops | Apple, Blueberry, Cherry, Corn, Grape, Orange, Peach, Pepper, Potato, Raspberry, Soybean, Squash, Strawberry, Tomato |
+| Reported top-1 accuracy | ≈ 99.6% on the held-out PlantVillage-style test split (8,215 images) |
+| Confidence handling | Results below 0.70 confidence are reported as "unknown/unclear" rather than a forced diagnosis |
+
+The model is explicitly scoped to **close-up single-leaf images**; the manifest shipped with the model documents that full field scenes, whole-plant shots from a distance, and unsupported crops are outside its intended input range, and flags that softmax confidence can still be overconfident on out-of-distribution images.
+
+### Plant Encyclopedia
+
+A structured, Arabic-first reference covering **20 species** across six categories (ornamental, houseplant, aromatic/medicinal, vegetable, fruit, and field crop), including roses, hibiscus, aloe vera, money plant, chrysanthemum, and turmeric alongside common greenhouse crops such as tomato, pepper, potato, and strawberry. Each entry defines watering, fertilization, greenhouse guidance, seasonal tips, common diseases, common pests, and nutrient-deficiency symptoms, and doubles as the source of the numeric thresholds (soil moisture, temperature, humidity, light) that the control engine targets for that species.
+
+<table>
+<tr>
+<td width="33%"><img src="docs/screenshots/enclopedia_1.png" alt="Plant encyclopedia"></td>
+<td width="33%"><img src="docs/screenshots/enclopedia_2.png" alt="Plant encyclopedia"></td>
+<td width="33%"><img src="docs/screenshots/enclopedia_3.png" alt="Plant encyclopedia"></td>
+</tr>
+<tr>
+<td width="33%"><img src="docs/screenshots/enclopedia_4.png" alt="Plant encyclopedia"></td>
+<td width="33%"><img src="docs/screenshots/enclopedia_5.png" alt="Plant encyclopedia"></td>
+<td width="33%"><img src="docs/screenshots/enclopedia_6.png" alt="Plant encyclopedia"></td>
+</tr>
+</table>
+
+### AI Plant-Care Assistant
+
+A chat interface, backed by Google's Gemini models, that can answer plant-care questions with streaming responses, giving users a conversational way to ask about watering, symptoms, or environmental conditions instead of searching through documentation.
+
+<p align="center">
+  <img src="docs/screenshots/chat.png" alt="RAYY AI assistant" width="850">
+</p>
+
+### Irrigation & Greenhouse Control
+
+A dedicated control engine (independent of the API layer, so it can run from the sensor ingestion pipeline, the simulator, or a direct API call) turns sensor readings and per-plant thresholds into actuator decisions. It supports:
+
+- **Automatic mode** — continuous evaluation against species thresholds and proportional actuator output (not simple on/off).
+- **Manual mode** — direct operator control of irrigation and climate actuators.
+- **Scheduled mode** — recurring control schedules per plant.
+- **Safety guards** — pump-runtime limits, no-flow detection, repeated-irrigation protection, actuator debounce, and an emergency-stop / emergency-reset pair that can halt all actuation.
+- A rule only fires on a sensor the connected device has actually declared and that is reporting fresh data; if a required sensor is missing, the engine holds rather than guessing a value.
+
+### IoT Devices & Simulation Mode
+
+Devices register and authenticate with the backend, report sensor data, and receive queued actuator commands. When physical hardware is not connected, a built-in simulation service generates realistic environmental readings through the same ingestion pipeline used by real devices, so the dashboard, control logic, and alerts can be demonstrated end-to-end without hardware.
 
 ---
 
-# 🔌 API Overview
+## Architecture
 
-The backend exposes REST API functionality for the main platform services.
-
-The project includes API areas for functionality such as:
-
-* Authentication-related operations
-* Plant management
-* Plant diagnosis
-* Diagnosis history
-* Disease reports
-* Sensor/device functionality
-* Irrigation/device commands
-* Real-time plant data
-
-The exact routes and request/response schemas are defined by the FastAPI application in the repository.
-
-When developing against the API, use the backend's automatically generated documentation where available.
-
-Typical FastAPI documentation endpoints are:
-
-```text
-/docs
-/redoc
+```
+┌─────────────────────────┐
+│       Frontend           │
+│  React + TypeScript      │
+│  Vite · Tailwind CSS     │
+│  TanStack Query          │
+└────────────┬─────────────┘
+             │ REST + WebSocket
+┌────────────▼─────────────┐
+│      FastAPI Backend      │
+│  ─────────────────────    │
+│  plants · care · chat     │
+│  content (encyclopedia,   │
+│    disease map)           │
+│  control · devices        │
+│  diagnosis · sensors      │
+│  simulation · auth        │
+└──┬───────────┬───────────┬┘
+   │           │           │
+┌──▼───┐  ┌────▼─────┐ ┌───▼────────┐
+│ SQL   │  │ ML       │ │ ESP32 /    │
+│ DB    │  │ Inference │ │ Simulated  │
+│(Postgres│ │(EfficientNet│ Devices  │
+│/SQLite)│ │ -B0, PyTorch)│           │
+└───────┘  └──────────┘ └────────────┘
 ```
 
-For example, when running the backend locally:
+Authentication is handled by **Supabase Auth** (email/password and OAuth), with backend requests validated against Supabase's public JWKS. The `Non_leaf_or_unknown` rejection class and confidence thresholds in the diagnosis pipeline keep the AI screening result honest about its own uncertainty rather than always returning a confident label.
 
-```text
-http://localhost:8000/docs
+## Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend framework | React 18 + TypeScript |
+| Build tool | Vite |
+| Styling | Tailwind CSS |
+| Data fetching / caching | TanStack Query |
+| Charts | Recharts |
+| Maps (disease map) | Leaflet / React-Leaflet |
+| Markdown rendering | react-markdown + remark-gfm |
+| Backend framework | FastAPI |
+| ORM & migrations | SQLAlchemy + Alembic |
+| Database | PostgreSQL (production) / SQLite (local dev) |
+| Auth | Supabase Auth (JWKS-verified access tokens) |
+| Machine learning | PyTorch / TorchVision, EfficientNet-B0 |
+| Conversational AI | Google Gemini (`google-genai`) |
+| Real-time transport | WebSockets |
+| IoT firmware | ESP32 (PlatformIO, C++) |
+| Containerization | Docker / Docker Compose |
+| Deployment targets | Vercel (frontend), Railway / Render (backend) |
+
+## API Reference
+
+The backend exposes a REST + WebSocket API under FastAPI. Selected endpoints:
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/auth/me` | Current authenticated user |
+| GET / POST | `/plants` | List / create plants |
+| GET / PATCH / DELETE | `/plants/{plant_id}` | Read, update, or remove a plant |
+| POST / GET | `/plants/{plant_id}/care-events` | Log or list care events |
+| POST | `/diagnose` | Run AI disease diagnosis on an uploaded image |
+| GET | `/diagnose/history` | List past diagnoses |
+| GET | `/encyclopedia` | List plant encyclopedia entries |
+| GET | `/encyclopedia/{species}` | Single species profile |
+| GET | `/disease-map` | Aggregated, geolocated disease reports |
+| POST | `/chat`, `/chat/stream` | AI assistant response (standard / streamed) |
+| GET / PUT | `/control/settings/{plant_id}` | Read / update control settings for a plant |
+| POST | `/control/auto`, `/control/manual`, `/control/schedule` | Set control mode / create a schedule |
+| POST | `/control/emergency-stop`, `/control/emergency-reset` | Halt or resume actuation |
+| POST | `/devices/register`, `/devices/claim` | Register and claim an IoT device |
+| POST | `/devices/{device_id}/report` | Device sensor report |
+| WS | `/ws/plants/{plant_id}` | Live sensor stream for a plant |
+| GET / POST | `/simulation/status`, `/simulation/start`, `/simulation/stop` | Control the demo simulation |
+
+## Project Structure
+
 ```
-
-The API documentation generated by FastAPI should be treated as the authoritative reference for the current endpoint schemas.
-
----
-
-# 📁 Project Structure
-
-The repository is organized into separate application layers.
-
-```text
 RAYY/
-│
-├── ai/
-│   └── AI / model-related components
-│
 ├── backend/
-│   └── FastAPI backend services
-│
-├── docs/
-│   └── Project documentation and screenshots
-│
-├── firmware/
-│   └── ESP32 / IoT firmware
-│
+│   ├── app/
+│   │   ├── routers/          # auth, plants, care, diagnosis, chat, content,
+│   │   │                     # control, devices, sensors, simulation
+│   │   ├── services/         # control_engine, inference_service, llm_service,
+│   │   │                     # simulation_service, device_adapter, alerts, ...
+│   │   ├── ml/                # model inference, treatment knowledge base
+│   │   ├── encyclopedia_data.py
+│   │   ├── models.py / schemas.py / database.py
+│   ├── alembic/               # database migrations
+│   └── tests/
 ├── frontend/
-│   └── React + TypeScript web application
-│
-├── sensors data/
-│   └── Sensor-related project data
-│
-├── utils/
-│   └── Utility components and supporting functionality
-│
-├── docker-compose.yml
-├── Dockerfile
-├── README.md
-└── ...
+│   └── src/
+│       ├── pages/             # Landing, Dashboard, Plants, Diagnose, Chat,
+│       │                     # Encyclopedia, DiseaseMap, CareLog, DeviceOnboard...
+│       ├── components/control/ # Control Center UI (auto/manual/schedule)
+│       ├── hooks/              # useWebSocket, useStreamingChat, useControl
+│       └── lib/                # api client, supabase client, i18n labels
+├── ai/                        # model export and training scripts
+├── firmware/                  # ESP32 firmware (PlatformIO)
+├── sensors data/               # additional sensor firmware / data
+├── docs/
+│   ├── screenshots/
+│   └── demo.mp4
+├── utils/                     # alerting, WhatsApp notifications, charts
+├── app.py                     # Streamlit prototype (sensor + diagnosis demo)
+├── docker-compose.yml / Dockerfile
+├── railway.toml / render.yaml / vercel.json
+└── requirements.txt
 ```
 
-The exact contents may evolve as the project develops.
+## Getting Started
 
----
+### Prerequisites
 
-# 🚀 Quick Start
+- Python 3.11+
+- Node.js 18+
+- Git
+- PlatformIO (only required to build/flash the ESP32 firmware)
 
-## Prerequisites
-
-Install the required development tools before starting:
-
-* Git
-* Node.js
-* npm
-* Python 3.x
-* pip
-* PlatformIO if working with the ESP32 firmware
-
----
-
-## 1. Clone the Repository
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/AhmedDev374/RAYY.git
 cd RAYY
 ```
 
----
+### 2. Backend
 
-## 2. Frontend Setup
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cp .env.example .env             # then fill in the values you need
+uvicorn app.main:app --reload --port 8000
+```
 
-Navigate to the frontend directory:
+Key backend environment variables (see `backend/.env.example`):
+
+| Variable | Purpose |
+|---|---|
+| `AUTH_MODE` | `supabase` (default) or `legacy` local JWT auth |
+| `SUPABASE_URL` | Required in `supabase` auth mode |
+| `DATABASE_URL` | Defaults to local SQLite; set a PostgreSQL URL for production |
+| `MODEL_PATH` | Path to the exported diagnosis model |
+| `CONFIDENCE_THRESHOLD` | Minimum confidence before a diagnosis is treated as reliable |
+| `GEMINI_API_KEY` | Enables the AI plant-care assistant |
+| `CORS_ORIGINS` | Allowed frontend origins for local development |
+
+### 3. Frontend
 
 ```bash
 cd frontend
-```
-
-Install dependencies:
-
-```bash
 npm install
-```
-
-Configure the required environment variables according to the frontend environment configuration.
-
-Start the development server:
-
-```bash
+cp .env.example .env             # set VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / VITE_API_URL
 npm run dev
 ```
 
-The Vite development server will provide the local frontend URL in the terminal.
+The dev server runs at `http://localhost:5173` by default.
 
----
-
-## 3. Backend Setup
-
-From the project root, create a Python virtual environment:
-
-### Windows
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-### Linux / macOS
+### 4. ESP32 firmware (optional, hardware only)
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+cd firmware
+pio run -t upload
 ```
 
-Install the backend dependencies according to the project's dependency file.
+### Running without hardware
 
-Then start the FastAPI application using the project's configured application entry point.
-
-A typical development command is:
-
-```bash
-python -m uvicorn app.main:app --reload --port 8000
-```
-
-> Use the actual backend entry point present in your checkout if it differs from the example above.
+Start the simulation from the dashboard or via `POST /simulation/start` — it feeds realistic environmental readings through the same ingestion pipeline as a real device, so the dashboard, diagnosis, and control features can all be exercised without physical sensors.
 
 ---
 
-# ⚙️ Environment Variables
+## Current Implementation vs. Physical Integration
 
-RAYY uses environment variables for configuration and sensitive integration values.
+To keep this README accurate to the repository rather than aspirational:
 
-Do **not** place actual credentials in `README.md`.
+**Implemented in this repository today:**
+- FastAPI backend with the routers, control engine, and database models listed above.
+- React/TypeScript frontend covering the dashboard, plant management, diagnosis, encyclopedia, chat, disease map, and control center pages.
+- A trained EfficientNet-B0 leaf-disease classification model with an exported manifest and label set.
+- A device registration/claim/report API and a WebSocket streaming path for live readings.
+- A simulation service that can stand in for physical sensors end-to-end.
+- ESP32 firmware source for physical sensor/actuator nodes.
 
-Typical configuration areas include:
+**Architecture / physical integration:**
+- The monitor → analyze → decide → control → monitor loop described above is fully implemented in software (control engine, thresholds, safety guards). Whether it is currently driving a physically deployed greenhouse, versus running against the simulator, depends on which hardware is connected and claimed through the device API at any given time — this README does not assume a specific physical deployment.
 
-| Configuration Area           | Purpose                                         |
-| ---------------------------- | ----------------------------------------------- |
-| Frontend Supabase URL        | Connect frontend authentication/services        |
-| Frontend Supabase public key | Client-side Supabase configuration              |
-| Backend database URL         | Database connection                             |
-| Supabase configuration       | Backend authentication/token verification       |
-| Google GenAI configuration   | AI assistant integration                        |
-| AI model configuration       | Configure the vision inference checkpoint/model |
-| CORS configuration           | Control permitted frontend origins              |
-| Device configuration         | Configure IoT communication                     |
+## License
 
-Use the environment templates/configuration files included in the repository as the source of truth for the exact variable names required by the current implementation.
-
-### Security Rule
-
-Never commit:
-
-```text
-API keys
-Access tokens
-Passwords
-OAuth secrets
-Database credentials
-Supabase service-role keys
-Private keys
-Production secrets
-```
-
-If a secret is accidentally committed, revoke/rotate it immediately.
+MIT License — see the repository for the full license text.
 
 ---
 
-# ☁️ Deployment
-
-The repository contains deployment configuration for cloud/container-based environments.
-
-Deployment support is organized around the project's existing configuration for:
-
-* Vercel
-* Railway
-* Render
-* Docker
-
-The exact deployment process depends on the selected hosting provider and the environment variables configured for that deployment.
-
-Before deploying, configure all required environment variables through the hosting provider's secret/environment configuration system.
-
-Do not commit production secrets to the repository.
-
----
-
-# 🔒 Security
-
-Security is an important part of the RAYY architecture.
-
-The project separates application configuration from sensitive credentials through environment variables.
-
-Recommended practices:
-
-* Never commit API keys.
-* Never commit passwords.
-* Never expose database credentials.
-* Never commit Supabase service-role keys.
-* Use environment variables for secrets.
-* Restrict CORS origins in production.
-* Use HTTPS for production deployments.
-* Rotate credentials if they are accidentally exposed.
-* Keep dependencies updated.
-* Use authentication for protected application functionality.
-
----
-
-# 🧭 Future Development
-
-RAYY is structured so that additional greenhouse capabilities can be added over time.
-
-Potential development directions include:
-
-* Expanded crop support
-* More plant disease categories
-* Improved model training and evaluation
-* Additional environmental sensors
-* Automated irrigation strategies
-* More advanced greenhouse automation
-* Historical environmental analytics
-* Plant growth tracking
-* More sophisticated alerts
-* Additional IoT devices
-* Improved AI-assisted recommendations
-* Hardware validation in real greenhouse environments
-
-These represent future development directions and should not be interpreted as currently implemented functionality.
-
----
-
-# 📄 License
-
-No license file is currently included in the repository.
-
-Until an explicit license is added, the repository should not be assumed to grant permission to redistribute, modify, or commercially use the project's source code.
-
----
-
-# 👨‍💻 Author
-
-**AhmedDev374**
-
-GitHub:
-
-[https://github.com/AhmedDev374/](https://github.com/AhmedDev374/)
+<p align="center"><sub>RAYY — AhmedDev374</sub></p>
